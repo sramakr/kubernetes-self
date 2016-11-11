@@ -25,11 +25,11 @@ write-files:
         etcd2:
           name: master
           listen-client-urls: http://0.0.0.0:2379,http://0.0.0.0:4001
-          advertise-client-urls: http://$private_ipv4:2379,http://$private_ipv4:4001
+          advertise-client-urls: http://$_private_ipv4:2379,http://$_private_ipv4:4001
           initial-cluster-token: k8s_etcd
-          listen-peer-urls: http://$private_ipv4:2380,http://$private_ipv4:7001
-          initial-advertise-peer-urls: http://$private_ipv4:2380
-          initial-cluster: master=http://$private_ipv4:2380
+          listen-peer-urls: http://$_private_ipv4:2380,http://$_private_ipv4:7001
+          initial-advertise-peer-urls: http://$_private_ipv4:2380
+          initial-cluster: master=http://$_private_ipv4:2380
           initial-cluster-state: new
         fleet:
           metadata: "role=master"
@@ -168,6 +168,43 @@ coreos:
         ExecStart=/opt/bin/setup-network-environment
         RemainAfterExit=yes
         Type=oneshot
+    - path: /run/setup-environment.sh
+      permissions: '0755'
+      content: |
+        #!/bin/bash
+
+        ENV="/etc/environment"
+
+        # Test for RW access to $1
+        touch $ENV
+        if [ $? -ne 0 ]; then
+            echo exiting, unable to modify: $ENV
+            exit 1
+        fi
+
+        # Setup environment target
+        sed -i -e '/^COREOS_PUBLIC_IPV4=/d' \
+            -e '/^COREOS_PRIVATE_IPV4=/d' \
+            "${ENV}"
+
+        # We spin loop until the nova-agent sets up the IP addresses
+        function get_ip () {
+            IF=$1
+            IP=
+            while [ 1 ]; do
+                IP=$(ifconfig $IF | awk '/inet / {print $2}')
+                if [ "$IP" != "" ]; then
+                    break
+                fi
+                sleep .1
+            done
+            echo $IP
+        }
+
+        # Echo results of IP queries to environment file as soon as network interfaces
+        # get assigned IPs
+        echo COREOS_PUBLIC_IPV4=$(get_ip ens3) >> $ENV # Also assigned to same IP
+        echo COREOS_PRIVATE_IPV4=$(get_ip ens3) >> $ENV
     - name: second-stage-cloudinit.service
       runtime: true
       command: start
@@ -182,6 +219,6 @@ coreos:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        EnvironmentFile=/etc/network-environment
-        ExecStartPre=/usr/bin/sed -i 's/$private\_ipv4/$ETH0\_IPV4/g' /run/cloud.init.yaml
+        EnvironmentFile=/etc/environment
+        ExecStartPre=/usr/bin/sed -i 's/\$_private/$private/g' /run/cloud.init.yaml
         ExecStart=/usr/bin/coreos-cloudinit --from-file=/run/cloud.init.yaml
