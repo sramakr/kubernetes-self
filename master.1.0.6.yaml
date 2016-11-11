@@ -1,3 +1,5 @@
+#cloud-config
+---
 write-files:
   - path: /run/cloud.init.yaml
     permissions: '0644'
@@ -211,8 +213,8 @@ coreos:
       content: |
         [Unit]
         Description=Run coreos-cloudinit with actual cloud-config after environment has been set up
-        Requires=setup-environment.service
-        After=setup-environment.service
+        Requires=setup-network-environment.service
+        After=setup-network-environment.service
         Requires=user-cloudinit-proc-cmdline.service
         After=user-cloudinit-proc-cmdline.service
 
