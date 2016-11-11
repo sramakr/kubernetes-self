@@ -36,8 +36,8 @@ write-files:
 
       # Echo results of IP queries to environment file as soon as network interfaces
       # get assigned IPs
-      echo COREOS_PUBLIC_IPV4=$(get_ip ens3) >> $ENV # Also assigned to same IP
-      echo COREOS_PRIVATE_IPV4=$(get_ip ens3) >> $ENV
+      echo COREOS_PUBLIC_IPV4=$(get_ip eth1) >> $ENV # Also assigned to same IP
+      echo COREOS_PRIVATE_IPV4=$(get_ip eth0) >> $ENV
   - path: /run/cloud.init.yaml
     permissions: '0644'
     content: |
