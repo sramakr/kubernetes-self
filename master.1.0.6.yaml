@@ -1,4 +1,41 @@
 write-files:
+  - path: /run/setup-environment.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+
+      ENV="/etc/environment"
+
+      # Test for RW access to $1
+      touch $ENV
+      if [ $? -ne 0 ]; then
+          echo exiting, unable to modify: $ENV
+          exit 1
+      fi
+
+      # Setup environment target
+      sed -i -e '/^COREOS_PUBLIC_IPV4=/d' \
+          -e '/^COREOS_PRIVATE_IPV4=/d' \
+          "${ENV}"
+
+      # We spin loop until the nova-agent sets up the IP addresses
+      function get_ip () {
+          IF=$1
+          IP=
+          while [ 1 ]; do
+              IP=$(ifconfig $IF | awk '/inet / {print $2}')
+              if [ "$IP" != "" ]; then
+                  break
+              fi
+              sleep .1
+          done
+          echo $IP
+      }
+
+      # Echo results of IP queries to environment file as soon as network interfaces
+      # get assigned IPs
+      echo COREOS_PUBLIC_IPV4=$(get_ip ens3) >> $ENV # Also assigned to same IP
+      echo COREOS_PRIVATE_IPV4=$(get_ip ens3) >> $ENV
   - path: /run/cloud.init.yaml
     permissions: '0644'
     content: |
@@ -168,43 +205,17 @@ coreos:
         ExecStart=/opt/bin/setup-network-environment
         RemainAfterExit=yes
         Type=oneshot
-    - path: /run/setup-environment.sh
-      permissions: '0755'
+    - name: setup-environment.service
+      command: start
+      runtime: true
       content: |
-        #!/bin/bash
+        [Unit]
+        Description=Setup environment with private (and public) IP addresses
 
-        ENV="/etc/environment"
-
-        # Test for RW access to $1
-        touch $ENV
-        if [ $? -ne 0 ]; then
-            echo exiting, unable to modify: $ENV
-            exit 1
-        fi
-
-        # Setup environment target
-        sed -i -e '/^COREOS_PUBLIC_IPV4=/d' \
-            -e '/^COREOS_PRIVATE_IPV4=/d' \
-            "${ENV}"
-
-        # We spin loop until the nova-agent sets up the IP addresses
-        function get_ip () {
-            IF=$1
-            IP=
-            while [ 1 ]; do
-                IP=$(ifconfig $IF | awk '/inet / {print $2}')
-                if [ "$IP" != "" ]; then
-                    break
-                fi
-                sleep .1
-            done
-            echo $IP
-        }
-
-        # Echo results of IP queries to environment file as soon as network interfaces
-        # get assigned IPs
-        echo COREOS_PUBLIC_IPV4=$(get_ip ens3) >> $ENV # Also assigned to same IP
-        echo COREOS_PRIVATE_IPV4=$(get_ip ens3) >> $ENV
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/run/setup-environment.sh
     - name: second-stage-cloudinit.service
       runtime: true
       command: start
@@ -220,5 +231,5 @@ coreos:
         Type=oneshot
         RemainAfterExit=yes
         EnvironmentFile=/etc/environment
-        ExecStartPre=/usr/bin/sed -i 's/\$_private/$private/g' /run/cloud.init.yaml
+        ExecStartPre=/usr/bin/sed -i 's/$_private/$private/g' /run/cloud.init.yaml
         ExecStart=/usr/bin/coreos-cloudinit --from-file=/run/cloud.init.yaml
